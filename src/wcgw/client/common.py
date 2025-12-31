@@ -2,7 +2,7 @@ import select
 import sys
 import termios
 import tty
-from typing import Literal
+from typing import Literal, Union
 from pydantic import BaseModel
 
 
@@ -19,7 +19,10 @@ from openai.types.chat import (
 )
 
 History = list[ChatCompletionMessageParam]
-Models = Literal["gpt-4o-2024-08-06", "gpt-4o-mini"]
+# OpenAI official models (for cost tracking)
+OpenAIModels = Literal["gpt-4o-2024-08-06", "gpt-4o-mini"]
+# Extended type to support any OpenAI-compatible provider
+Models = Union[OpenAIModels, str]
 
 
 def discard_input() -> None:

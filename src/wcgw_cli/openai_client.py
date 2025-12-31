@@ -13,7 +13,6 @@ import openai
 import petname  # type: ignore[import-untyped]
 import rich
 import tokenizers  # type: ignore[import-untyped]
-from dotenv import load_dotenv
 from openai import OpenAI
 from openai.types.chat import (
     ChatCompletionContentPartParam,
@@ -24,7 +23,20 @@ from pydantic import BaseModel
 from typer import Typer
 
 from wcgw.client.bash_state.bash_state import BashState
-from wcgw.client.common import CostData, History, Models, discard_input
+from wcgw.client.common import CostData, History, Models, OpenAIModels, discard_input
+
+# Cost data for OpenAI official models
+OPENAI_COST_DATA: dict[OpenAIModels, CostData] = {
+    "gpt-4o-2024-08-06": CostData(
+        cost_per_1m_input_tokens=5, cost_per_1m_output_tokens=15
+    ),
+    "gpt-4o-mini": CostData(
+        cost_per_1m_input_tokens=0.15, cost_per_1m_output_tokens=0.6
+    ),
+}
+
+# Zero cost for non-OpenAI providers (disables cost tracking)
+ZERO_COST = CostData(cost_per_1m_input_tokens=0, cost_per_1m_output_tokens=0)
 from wcgw.client.memory import load_memory
 from wcgw.client.tool_prompts import TOOL_PROMPTS
 from wcgw.client.tools import (
@@ -102,13 +114,29 @@ def parse_user_message_special(msg: str) -> ChatCompletionUserMessageParam:
 app = Typer(pretty_exceptions_show_locals=False)
 
 
+def _is_openai_official(base_url: Optional[str]) -> bool:
+    """Check if base_url points to OpenAI official API."""
+    if base_url is None:
+        return True
+    return base_url.startswith("https://api.openai.com")
+
+
+def _get_cost_data(model: Models, base_url: Optional[str]) -> CostData:
+    """Get cost data for a model. Returns zero cost for non-OpenAI providers."""
+    if not _is_openai_official(base_url):
+        return ZERO_COST
+    # Try to get cost data for known OpenAI models
+    return OPENAI_COST_DATA.get(model, ZERO_COST)  # type: ignore[arg-type]
+
+
 @app.command()
 def loop(
-    first_message: Optional[str] = None,
-    limit: Optional[float] = None,
-    resume: Optional[str] = None,
+    first_message: Optional[str],
+    limit: Optional[float],
+    resume: Optional[str],
+    model: Models,
+    base_url: Optional[str],
 ) -> tuple[str, float]:
-    load_dotenv()
 
     session_id = str(uuid.uuid4())[:6]
 
@@ -141,15 +169,14 @@ def loop(
 
     my_dir = os.path.dirname(__file__)
 
+    # Get cost data based on model and provider
+    cost_data = _get_cost_data(model, base_url)
+
     config = Config(
-        model=cast(Models, os.getenv("OPENAI_MODEL", "gpt-4o-2024-08-06").lower()),
+        model=model,
         cost_limit=0.1,
         cost_unit="$",
-        cost_file={
-            "gpt-4o-2024-08-06": CostData(
-                cost_per_1m_input_tokens=5, cost_per_1m_output_tokens=15
-            ),
-        },
+        cost_file={model: cost_data},
     )
 
     if limit is not None:
@@ -200,7 +227,11 @@ def loop(
             if history[-1]["role"] == "tool":
                 waiting_for_assistant = True
 
-        client = OpenAI()
+        # Create client with optional custom base_url for OpenAI-compatible providers
+        if base_url is not None:
+            client = OpenAI(base_url=base_url)
+        else:
+            client = OpenAI()
 
         while True:
             if cost > limit:
@@ -280,12 +311,16 @@ def loop(
                         for tool_call_id, toolcallargs in tool_call_args_by_id.items():
                             for toolindex, tool_args in toolcallargs.items():
                                 try:
+                                    # Create a wrapper for loop_call that captures model/base_url
+                                    def loop_wrapper(msg: str, lim: float) -> tuple[str, float]:
+                                        return loop(msg, lim, None, model, base_url)
+
                                     output_or_dones, cost_ = get_tool_output(
                                         context,
                                         json.loads(tool_args),
                                         enc,
                                         limit - cost,
-                                        loop,
+                                        loop_wrapper,
                                         24000,  # coding_max_tokens
                                         8000,   # noncoding_max_tokens
                                     )
