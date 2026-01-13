@@ -24,6 +24,7 @@ from typer import Typer
 
 from wcgw.client.bash_state.bash_state import BashState
 from wcgw.client.common import CostData, History, Models, OpenAIModels, discard_input
+from wcgw.client.encoder import wrap_tokenizer
 
 # Cost data for OpenAI official models
 OPENAI_COST_DATA: dict[OpenAIModels, CostData] = {
@@ -183,7 +184,8 @@ def loop(
         config.cost_limit = limit
     limit = config.cost_limit
 
-    enc = tokenizers.Tokenizer.from_pretrained("Xenova/gpt-4o")
+    raw_tokenizer = tokenizers.Tokenizer.from_pretrained("Xenova/gpt-4o")
+    enc = wrap_tokenizer(raw_tokenizer)
 
     tools = [
         openai.pydantic_function_tool(

@@ -904,9 +904,67 @@ def file_writing(
 TOOLS = BashCommand | FileWriteOrEdit | ReadImage | ReadFiles | Initialize | ContextSave
 
 
+def normalize_tool_args(args: dict[str, Any]) -> dict[str, Any]:
+    """Normalize tool call arguments for multi-model compatibility.
+    
+    Handles quirks from different LLM providers:
+    - glm-4.7 (Z.AI): Returns action_json as JSON string instead of dict
+    - Gemini: Fills empty values in optional fields (e.g., send_text: "")
+    
+    Returns normalized args dict compatible with Pydantic strict validation.
+    """
+    # 1. If action_json is a string, parse it to dict
+    if "action_json" in args and isinstance(args["action_json"], str):
+        try:
+            args["action_json"] = json.loads(args["action_json"])
+        except json.JSONDecodeError:
+            pass  # Keep original if not valid JSON
+    
+    # 2. Clean up action_json fields if present
+    if "action_json" in args and isinstance(args["action_json"], dict):
+        action = args["action_json"]
+        
+        # Check if value should be treated as "not set"
+        def is_empty(v: Any) -> bool:
+            if v is None or v == "" or v == []:
+                return True
+            return False
+        
+        # Valid fields per action type (based on ActionJsonSchema in types_.py)
+        valid_fields_by_type = {
+            "command": {"type", "command", "is_background", "bg_command_id"},
+            "status_check": {"type", "status_check", "bg_command_id"},
+            "send_text": {"type", "send_text", "bg_command_id"},
+            "send_specials": {"type", "send_specials", "bg_command_id"},
+            "send_ascii": {"type", "send_ascii", "bg_command_id"},
+        }
+        
+        action_type = action.get("type", "command")
+        allowed_fields = valid_fields_by_type.get(action_type, set())
+        
+        # Filter: keep only allowed fields with non-empty values
+        # Exception: is_background can be False (valid value)
+        cleaned_action = {}
+        for k, v in action.items():
+            if k not in allowed_fields:
+                continue  # Remove extra fields
+            if k == "is_background":
+                # Keep is_background even if False (it's a valid explicit value)
+                if v is not None:
+                    cleaned_action[k] = v
+            elif not is_empty(v):
+                cleaned_action[k] = v
+        
+        args["action_json"] = cleaned_action
+    
+    return args
+
+
 def which_tool(args: str) -> TOOLS:
     adapter = TypeAdapter[TOOLS](TOOLS, config={"extra": "forbid"})
-    return adapter.validate_python(json.loads(args))
+    parsed = json.loads(args)
+    normalized = normalize_tool_args(parsed)
+    return adapter.validate_python(normalized)
 
 
 def which_tool_name(name: str) -> Type[TOOLS]:
@@ -957,8 +1015,9 @@ def get_tool_output(
 ) -> tuple[list[str | ImageData], float]:
     global TOOL_CALLS
     if isinstance(args, dict):
+        normalized = normalize_tool_args(args)  # type: ignore[arg-type]
         adapter = TypeAdapter[TOOLS](TOOLS, config={"extra": "forbid"})
-        arg = adapter.validate_python(args)
+        arg = adapter.validate_python(normalized)
     else:
         arg = args
     output: tuple[str | ImageData, float]

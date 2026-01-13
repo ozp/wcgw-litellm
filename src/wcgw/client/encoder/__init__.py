@@ -43,5 +43,34 @@ class LazyEncoder:
         return cast(str, self._tokenizer.decode(tokens))
 
 
+class TokenizerWrapper:
+    """Wraps a tokenizers.Tokenizer to implement EncoderDecoder interface.
+    
+    Provides both EncoderDecoder interface (.encoder/.decoder) and 
+    direct tokenizer interface (.encode/.decode) for compatibility.
+    """
+
+    def __init__(self, tokenizer: tokenizers.Tokenizer) -> None:
+        self._tokenizer = tokenizer
+
+    def encoder(self, text: str) -> list[int]:
+        return cast(list[int], self._tokenizer.encode(text).ids)
+
+    def decoder(self, tokens: list[int]) -> str:
+        return cast(str, self._tokenizer.decode(tokens))
+
+    # Aliases for code that uses raw tokenizer interface
+    def encode(self, text: str) -> list[int]:
+        return self.encoder(text)
+
+    def decode(self, tokens: list[int]) -> str:
+        return self.decoder(tokens)
+
+
 def get_default_encoder() -> EncoderDecoder[int]:
     return LazyEncoder()
+
+
+def wrap_tokenizer(tokenizer: tokenizers.Tokenizer) -> EncoderDecoder[int]:
+    """Wrap a raw tokenizers.Tokenizer to implement EncoderDecoder interface."""
+    return TokenizerWrapper(tokenizer)
