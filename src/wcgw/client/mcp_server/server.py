@@ -91,10 +91,16 @@ async def handle_list_tools() -> list[types.Tool]:
     return TOOL_PROMPTS
 
 
-@server.call_tool()  # type: ignore
+@server.call_tool(validate_input=False)  # type: ignore
 async def handle_call_tool(
     name: str, arguments: dict[str, Any] | None
 ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+    """Handle tool calls with multi-model compatibility.
+    
+    Note: validate_input=False allows models that send action_json as JSON string
+    (e.g., glm-4.7) to work. Validation is handled by parse_tool_by_name which
+    has proper fallback for JSON string conversion.
+    """
     global BASH_STATE
     if not arguments:
         raise ValueError("Missing arguments")

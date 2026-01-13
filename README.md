@@ -1,10 +1,53 @@
 # Shell and Coding agent for Claude and other mcp clients
 
+> **🔀 This is a fork** of [rusiaaman/wcgw](https://github.com/rusiaaman/wcgw) with multi-model compatibility patches.
+
 Empowering chat applications to code, build and run on your local machine.
 
 wcgw is an MCP server with tightly integrated shell and code editing tools.
 
 ⚠️ Warning: do not allow BashCommand tool without reviewing the command, it may result in data loss.
+
+## Fork Changes
+
+This fork adds support for OpenAI-compatible API providers (LiteLLM, etc.):
+
+### New CLI Flags
+
+```bash
+wcgw_local -m <model> -b <base_url>
+```
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--model`, `-m` | Model name | `gpt-4o` |
+| `--base-url`, `-b` | API endpoint | OpenAI |
+
+**Priority**: CLI Flag > Environment Variable > Default
+
+### Bug Fixes for Non-OpenAI Models
+
+1. **Tool argument normalization** - Handles JSON strings from models like glm-4.7
+2. **TokenizerWrapper** - Fixes interface compatibility for tiktoken
+
+### Usage with LiteLLM
+
+```bash
+export OPENAI_API_KEY=sk-litellm-xxx
+wcgw_local -m glm-4.7 -b http://localhost:4000/v1
+```
+
+### Tested Models
+
+| Model | Provider | Status |
+|-------|----------|--------|
+| glm-4.7 | Z.AI | ✅ Works |
+| gpt-4o | OpenAI | ✅ Native |
+| qwen-235b | Cerebras | ⚠️ Provider limitation |
+
+See [ISSUE-REPORT-MULTI-MODEL.md](docs/ISSUE-REPORT-MULTI-MODEL.md) for technical details.
+
+---
 
 [![Tests](https://github.com/rusiaaman/wcgw/actions/workflows/python-tests.yml/badge.svg?branch=main)](https://github.com/rusiaaman/wcgw/actions/workflows/python-tests.yml)
 [![Mypy strict](https://github.com/rusiaaman/wcgw/actions/workflows/python-types.yml/badge.svg?branch=main)](https://github.com/rusiaaman/wcgw/actions/workflows/python-types.yml)

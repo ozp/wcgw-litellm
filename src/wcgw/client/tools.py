@@ -985,12 +985,20 @@ def which_tool_name(name: str) -> Type[TOOLS]:
 
 
 def parse_tool_by_name(name: str, arguments: dict[str, Any]) -> TOOLS:
+    """Parse tool arguments with multi-model compatibility.
+    
+    Uses normalize_tool_args to handle quirks from different LLM providers:
+    - glm-4.7: Returns action_json as JSON string instead of dict
+    - Gemini: Fills empty values in optional fields
+    """
     tool_type = which_tool_name(name)
+    # Always normalize first for multi-model compatibility
+    normalized = normalize_tool_args(arguments.copy())
     try:
-        return tool_type(**arguments)
+        return tool_type(**normalized)
     except ValidationError:
-
-        def try_json(x: str) -> Any:
+        # Fallback: try parsing any remaining string values as JSON
+        def try_json(x: Any) -> Any:
             if not isinstance(x, str):
                 return x
             try:
@@ -998,7 +1006,7 @@ def parse_tool_by_name(name: str, arguments: dict[str, Any]) -> TOOLS:
             except json.JSONDecodeError:
                 return x
 
-        return tool_type(**{k: try_json(v) for k, v in arguments.items()})
+        return tool_type(**{k: try_json(v) for k, v in normalized.items()})
 
 
 TOOL_CALLS: list[TOOLS] = []
